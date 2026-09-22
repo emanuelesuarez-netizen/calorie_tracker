@@ -8,7 +8,7 @@ const USER_PROFILE = {
 };
 
 function calculateMetrics() {
-  // Mifflin-St Jeor: BMR = (10 * kg) + (6.25 * cm) - (5 * age) + 5 (uomo)
+  // Formula di Mifflin-St Jeor (uomo)
   const bmr = Math.round((10 * USER_PROFILE.weightKg) + (6.25 * USER_PROFILE.heightCm) - (5 * USER_PROFILE.age) + 5);
   const tdee = Math.round(bmr * USER_PROFILE.activityMultiplier);
   return { bmr, tdee };
@@ -45,8 +45,16 @@ async function syncFromGoogleSheets() {
   if (!SHEETS_API_URL || SHEETS_API_URL.includes("INCOLLA_QUI")) return;
   const statusEl = document.getElementById('syncStatus');
   if (statusEl) statusEl.innerText = "Sincronizzazione...";
+  
   try {
-    const res = await fetch(SHEETS_API_URL);
+    const fetchUrl = `${SHEETS_API_URL}?t=${Date.now()}`;
+    const res = await fetch(fetchUrl, {
+      method: "GET",
+      redirect: "follow"
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
     const result = await res.json();
     if (result.status === "success" && Array.isArray(result.data)) {
       saveMeals(result.data);
@@ -55,7 +63,7 @@ async function syncFromGoogleSheets() {
     }
   } catch (err) {
     console.warn("Sincronizzazione non riuscita:", err);
-    if (statusEl) statusEl.innerText = "Offline";
+    if (statusEl) statusEl.innerText = "Errore sync";
   }
 }
 
@@ -273,7 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Supporto Riconoscimento Vocale
+  // Supporto Dettatura Vocale
   const voiceBtn = document.getElementById('voiceBtn');
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
