@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cal-tracker-v10';
+const CACHE_NAME = 'cal-tracker-v1.4.0';
 const ASSETS = [
   './',
   './index.html',
@@ -29,9 +29,12 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  if (e.request.url.includes('generativelanguage.googleapis.com')) {
+  // Ignora le richieste verso le API di Gemini e di Google Apps Script
+  if (e.request.url.includes('generativelanguage.googleapis.com') ||
+      e.request.url.includes('script.google.com')) {
     return;
   }
+
   e.respondWith(
     caches.match(e.request).then((res) => res || fetch(e.request))
   );

@@ -2,360 +2,140 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Voice Calorie Tracker</title>
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#090d16">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="icon" href="https://fav.farm/🥗">
   <style>
     :root {
-      --bg: #090d16;
-      --card-bg: rgba(22, 30, 49, 0.7);
-      --card-border: rgba(255, 255, 255, 0.08);
-      --accent-blue: #38bdf8;
-      --accent-green: #34d399;
-      --accent-orange: #fb923c;
-      --accent-pink: #f472b6;
-      --accent-purple: #a855f7;
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --accent: #10b981;
+      --accent-muted: #064e3b;
+      --danger: #ef4444;
       --text: #f8fafc;
       --text-muted: #94a3b8;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 1.25rem; max-width: 600px; margin: 0 auto; min-height: 100vh; }
+    
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+    h1 { font-size: 1.25rem; font-weight: 700; color: var(--text); }
+    .badge { background: #334155; color: #38bdf8; font-size: 0.75rem; padding: 2px 8px; border-radius: 9999px; }
+    #syncStatus { font-size: 0.75rem; color: var(--text-muted); }
+
+    .date-selector { margin-bottom: 1.25rem; }
+    .date-selector input[type="date"] {
+      width: 100%; background: var(--card-bg); border: 1px solid var(--border); color: var(--text);
+      padding: 0.6rem 1rem; border-radius: 8px; font-size: 1rem; outline: none;
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
-    body { background-color: var(--bg); color: var(--text); padding: 16px; min-height: 100vh; overflow-x: hidden; }
-    .container { max-width: 460px; margin: 0 auto; padding-bottom: 30px; }
+    .dashboard-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.25rem; }
+    .calorie-summary { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.75rem; }
+    .calorie-digits { font-size: 2rem; font-weight: 800; color: var(--accent); }
+    .target-digits { font-size: 0.95rem; color: var(--text-muted); }
 
-    header { text-align: center; margin-bottom: 12px; }
-    header h1 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.5px; }
+    .progress-container { width: 100%; height: 12px; background: #334155; border-radius: 6px; position: relative; margin-bottom: 1rem; overflow: hidden; }
+    .progress-bar { height: 100%; background: var(--accent); width: 0%; transition: width 0.4s ease; }
+    .bmr-marker { position: absolute; top: 0; bottom: 0; width: 3px; background: #f59e0b; z-index: 2; }
 
-    .version-tag {
-      display: inline-block; font-size: 0.7rem; color: var(--text-muted);
-      background: rgba(255, 255, 255, 0.05); padding: 2px 8px; border-radius: 999px;
-      margin-top: 4px; border: 1px solid var(--card-border); cursor: default;
-      transition: all 0.2s ease;
-    }
-    .version-tag.update-ready {
-      background: rgba(56, 189, 248, 0.2); color: var(--accent-blue);
-      border-color: var(--accent-blue); cursor: pointer;
-    }
+    .macro-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+    .macro-item { background: rgba(255, 255, 255, 0.03); padding: 8px; border-radius: 8px; }
+    .macro-label { font-size: 0.75rem; color: var(--text-muted); }
+    .macro-val { font-size: 1rem; font-weight: 600; margin-top: 2px; }
 
-    /* Sezione Profilo & Fabbisogno Energetico */
-    .profile-card {
-      background: linear-gradient(145deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9));
-      border: 1px solid var(--card-border); border-radius: 20px;
-      padding: 16px; margin-bottom: 16px; backdrop-filter: blur(16px);
-      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    .input-section { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.25rem; }
+    .input-box { display: flex; gap: 8px; }
+    .input-box input {
+      flex: 1; background: #0f172a; border: 1px solid var(--border); color: var(--text);
+      padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.95rem; outline: none;
     }
-    .profile-header {
-      display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;
+    .input-box button {
+      background: var(--card-bg); border: 1px solid var(--border); color: var(--text);
+      width: 44px; height: 44px; border-radius: 8px; cursor: pointer; display: flex;
+      align-items: center; justify-content: center; font-size: 1.2rem;
     }
-    .profile-title { font-size: 0.9rem; font-weight: 700; color: var(--accent-blue); text-transform: uppercase; letter-spacing: 0.5px; }
-    .btn-edit-profile {
-      background: rgba(255, 255, 255, 0.06); border: 1px solid var(--card-border);
-      color: var(--text-muted); border-radius: 8px; padding: 4px 10px;
-      font-size: 0.75rem; cursor: pointer; transition: all 0.2s;
-    }
-    .btn-edit-profile:hover { color: var(--text); background: rgba(255, 255, 255, 0.12); }
+    .btn-submit { background: var(--accent) !important; color: #0f172a !important; font-weight: bold; border: none !important; }
+    .recording { background: var(--danger) !important; animation: pulse 1s infinite alternate; }
+    @keyframes pulse { from { opacity: 0.7; } to { opacity: 1; } }
+    #inputStatus { font-size: 0.8rem; margin-top: 8px; min-height: 1.2rem; }
 
-    .energy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-    .energy-box {
-      background: rgba(0, 0, 0, 0.25); border: 1px solid var(--card-border);
-      border-radius: 12px; padding: 10px; text-align: center;
+    .meals-container { display: flex; flex-direction: column; gap: 8px; }
+    .meal-card {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
+      padding: 1rem; display: flex; justify-content: space-between; align-items: center;
     }
-    .energy-val { font-size: 1.25rem; font-weight: 800; color: #fff; }
-    .energy-lbl { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
-
-    /* Barra Progresso Fabbisogno TDEE */
-    .tdee-progress-wrapper {
-      background: rgba(0, 0, 0, 0.3); border-radius: 999px; height: 10px;
-      overflow: hidden; border: 1px solid var(--card-border); margin: 6px 0 6px 0;
-    }
-    .tdee-progress-bar {
-      height: 100%; width: 0%; background: linear-gradient(90deg, #38bdf8, #34d399);
-      border-radius: 999px; transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1), background 0.3s;
-    }
-    .tdee-progress-bar.over { background: linear-gradient(90deg, #fb923c, #ef4444); }
-    .tdee-subtext {
-      display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);
-    }
-
-    /* Form Modifica Dati */
-    .profile-edit-panel {
-      display: none; grid-template-columns: 1fr 1fr; gap: 8px;
-      margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--card-border);
-      animation: fadeIn 0.3s ease;
-    }
-    .profile-edit-panel.active { display: grid; }
-    .profile-edit-panel label { font-size: 0.7rem; color: var(--text-muted); }
-    .profile-input {
-      width: 100%; padding: 8px; border-radius: 8px;
-      border: 1px solid var(--card-border); background: #0f172a;
-      color: #fff; font-size: 0.85rem; margin-top: 4px; outline: none;
-    }
-    .profile-input:focus { border-color: var(--accent-blue); }
-    .btn-save-profile {
-      grid-column: span 2; background: var(--accent-blue); color: #090d16;
-      border: none; border-radius: 8px; padding: 10px; font-weight: 700;
-      font-size: 0.85rem; cursor: pointer; margin-top: 4px;
-    }
-
-    /* Barra Data */
-    .date-nav {
-      display: flex; align-items: center; justify-content: space-between;
-      background: var(--card-bg); backdrop-filter: blur(12px);
-      border: 1px solid var(--card-border); border-radius: 16px;
-      padding: 6px 12px; margin-bottom: 16px;
-    }
-    .date-btn {
-      background: rgba(255, 255, 255, 0.06); border: none; color: var(--text);
-      padding: 8px 12px; border-radius: 10px; font-weight: 600; font-size: 0.8rem;
-      cursor: pointer; transition: all 0.2s;
-    }
-    .date-btn:active { transform: scale(0.95); background: rgba(255, 255, 255, 0.12); }
-    .date-input {
-      background: transparent; border: none; color: var(--accent-blue);
-      font-size: 0.95rem; font-weight: 700; text-align: center; cursor: pointer;
-    }
-    .date-input::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
-
-    /* Dashboard Totali Giornalieri */
-    .dashboard-card {
-      background: var(--card-bg); backdrop-filter: blur(16px);
-      border: 1px solid var(--card-border); border-radius: 20px;
-      padding: 18px; margin-bottom: 18px; box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-    }
-    .calorie-hero { text-align: center; margin-bottom: 16px; }
-    .calorie-num { font-size: 2.5rem; font-weight: 800; color: #fff; line-height: 1; }
-    .calorie-sub { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
-
-    .macros-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-    .macro-box {
-      background: rgba(255, 255, 255, 0.03); border: 1px solid var(--card-border);
-      border-radius: 14px; padding: 10px; text-align: center;
-    }
-    .macro-val { font-size: 1.1rem; font-weight: 700; }
-    .macro-lbl { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
-    .p-color { color: var(--accent-blue); }
-    .c-color { color: var(--accent-orange); }
-    .f-color { color: var(--accent-pink); }
-
-    /* Sezione Input Vocale & Manuale */
-    .input-section { display: flex; flex-direction: column; align-items: center; margin: 18px 0 24px 0; }
-    .mic-button-wrapper { position: relative; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
-
-    .pulse-ring {
-      position: absolute; width: 84px; height: 84px; border-radius: 50%;
-      background: rgba(56, 189, 248, 0.4); opacity: 0; pointer-events: none;
-    }
-
-    .mic-btn {
-      width: 72px; height: 72px; border-radius: 50%; border: none;
-      background: linear-gradient(135deg, #0284c7, #2563eb);
-      color: white; font-size: 1.7rem; cursor: pointer; position: relative; z-index: 2;
-      box-shadow: 0 8px 20px rgba(37, 99, 235, 0.4);
-      display: flex; align-items: center; justify-content: center;
-      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-    .mic-btn:active { transform: scale(0.92); }
-
-    .mic-btn.listening {
-      background: linear-gradient(135deg, #ef4444, #dc2626);
-      box-shadow: 0 8px 25px rgba(220, 38, 38, 0.5);
-    }
-    .mic-btn.listening ~ .pulse-ring {
-      animation: pulse-ring 1.8s infinite cubic-bezier(0.215, 0.61, 0.355, 1);
-    }
-
-    @keyframes pulse-ring {
-      0% { transform: scale(0.9); opacity: 0.8; }
-      100% { transform: scale(1.6); opacity: 0; }
-    }
-
-    .text-input-wrapper { display: flex; width: 100%; gap: 8px; margin-top: 8px; }
-    .food-text-input {
-      flex: 1; padding: 12px 14px; border-radius: 12px;
-      border: 1px solid var(--card-border); background: var(--card-bg);
-      color: #fff; font-size: 0.9rem; outline: none; transition: border-color 0.2s;
-    }
-    .food-text-input:focus { border-color: var(--accent-blue); }
-    .send-text-btn {
-      background: rgba(56, 189, 248, 0.15); border: 1px solid var(--card-border);
-      color: var(--accent-blue); border-radius: 12px; padding: 0 16px;
-      font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: all 0.2s;
-    }
-    .send-text-btn:active { transform: scale(0.95); background: rgba(56, 189, 248, 0.25); }
-
-    .status-msg {
-      font-size: 0.85rem; color: var(--text-muted); margin-top: 10px;
-      text-align: center; height: 18px;
-    }
-
-    /* Lista Log */
-    .section-header { font-size: 0.95rem; font-weight: 700; color: var(--text-muted); margin-bottom: 12px; }
-    .logs-list { display: flex; flex-direction: column; gap: 10px; }
-
-    .log-card {
-      background: var(--card-bg); border: 1px solid var(--card-border);
-      border-radius: 14px; padding: 14px;
-      display: flex; justify-content: space-between; align-items: flex-start;
-      animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    }
-    @keyframes slideIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-
-    .log-header-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-    .meal-type-tag {
-      font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
-      padding: 2px 7px; border-radius: 6px; letter-spacing: 0.5px;
-    }
-    .meal-colazione { background: rgba(251, 146, 60, 0.2); color: var(--accent-orange); }
-    .meal-pranzo { background: rgba(52, 211, 153, 0.2); color: var(--accent-green); }
-    .meal-spuntino { background: rgba(56, 189, 248, 0.2); color: var(--accent-blue); }
-    .meal-cena { background: rgba(244, 114, 182, 0.2); color: var(--accent-pink); }
-
-    .meal-time-tag {
-      font-size: 0.7rem; color: var(--text-muted); background: rgba(255, 255, 255, 0.05);
-      padding: 2px 6px; border-radius: 4px;
-    }
-    .tdee-badge {
-      font-size: 0.7rem; font-weight: 700; color: var(--accent-purple);
-      background: rgba(168, 85, 247, 0.15); padding: 2px 6px; border-radius: 4px;
-    }
-
-    .log-title { font-size: 0.95rem; font-weight: 600; margin-top: 4px; }
-    .log-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
-    .btn-delete {
-      background: rgba(239, 68, 68, 0.1); border: none; color: #ef4444;
-      border-radius: 8px; width: 32px; height: 32px; cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      transition: background 0.2s; margin-left: 8px; flex-shrink: 0;
-    }
-    .btn-delete:active { background: rgba(239, 68, 68, 0.25); }
+    .meal-type { font-size: 0.75rem; color: var(--accent); font-weight: 600; text-transform: uppercase; margin-bottom: 2px; display: block; }
+    .meal-name { font-size: 0.95rem; font-weight: 500; }
+    .meal-macros { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; display: block; }
+    .meal-calories { font-size: 1rem; font-weight: 700; }
+    .delete-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1rem; }
+    .delete-btn:hover { color: var(--danger); }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>Diario Nutrizionale</h1>
-      <div id="app-version" class="version-tag">v1.3.0</div>
-    </header>
-
-    <!-- Profilo & Fabbisogno Energetico -->
-    <div class="profile-card">
-      <div class="profile-header">
-        <span class="profile-title">Fabbisogno Giornaliero</span>
-        <button class="btn-edit-profile" id="toggle-profile-btn">Modifica Dati ⚙️</button>
-      </div>
-
-      <div class="energy-grid">
-        <div class="energy-box">
-          <div class="energy-val" id="disp-bmr">1696</div>
-          <div class="energy-lbl">Metabolismo Basale (BMR)</div>
-        </div>
-        <div class="energy-box">
-          <div class="energy-val" id="disp-tdee">2036</div>
-          <div class="energy-lbl">Fabbisogno Totale (TDEE)</div>
-        </div>
-      </div>
-
-      <div class="tdee-progress-wrapper">
-        <div class="tdee-progress-bar" id="tdee-progress-bar"></div>
-      </div>
-      <div class="tdee-subtext">
-        <span id="tdee-consumed-lbl">0% del TDEE</span>
-        <span id="tdee-remaining-lbl">2036 kcal rimanenti</span>
-      </div>
-
-      <!-- Form Modifica Dati a Comparsa -->
-      <div class="profile-edit-panel" id="profile-edit-panel">
-        <div>
-          <label>Peso (kg)</label>
-          <input type="number" id="inp-weight" class="profile-input" step="0.1">
-        </div>
-        <div>
-          <label>Altezza (cm)</label>
-          <input type="number" id="inp-height" class="profile-input">
-        </div>
-        <div>
-          <label>Età</label>
-          <input type="number" id="inp-age" class="profile-input">
-        </div>
-        <div>
-          <label>Sesso</label>
-          <select id="inp-gender" class="profile-input">
-            <option value="male">Maschio</option>
-            <option value="female">Femmina</option>
-          </select>
-        </div>
-        <div style="grid-column: span 2;">
-          <label>Attività Fisica</label>
-          <select id="inp-activity" class="profile-input">
-            <option value="1.2">Sedentaria (studio / ufficio)</option>
-            <option value="1.375">Leggera (1-3 allenamenti/settimana)</option>
-            <option value="1.55">Moderata (3-5 allenamenti/settimana)</option>
-            <option value="1.725">Intensa (6-7 allenamenti/settimana)</option>
-          </select>
-        </div>
-        <button class="btn-save-profile" id="save-profile-btn">Aggiorna Obiettivi</button>
-      </div>
+  <header>
+    <div>
+      <h1>Calorie Tracker</h1>
+      <span class="badge">v1.4.0</span>
     </div>
+    <span id="syncStatus">Cloud attivo</span>
+  </header>
 
-    <!-- Barra Data -->
-    <div class="date-nav">
-      <button class="date-btn" id="prev-day-btn">◀</button>
-      <input type="date" id="selected-date-picker" class="date-input">
-      <button class="date-btn" id="next-day-btn">▶</button>
-    </div>
-
-    <!-- Dashboard Totali -->
-    <div class="dashboard-card">
-      <div class="calorie-hero">
-        <div class="calorie-num" id="tot-kcal">0</div>
-        <div class="calorie-sub">Kilocalorie Totali</div>
-      </div>
-      <div class="macros-row">
-        <div class="macro-box">
-          <div class="macro-val p-color" id="tot-prot">0g</div>
-          <div class="macro-lbl">Proteine</div>
-        </div>
-        <div class="macro-box">
-          <div class="macro-val c-color" id="tot-carb">0g</div>
-          <div class="macro-lbl">Carboidrati</div>
-        </div>
-        <div class="macro-box">
-          <div class="macro-val f-color" id="tot-fat">0g</div>
-          <div class="macro-lbl">Grassi</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Sezione Input -->
-    <div class="input-section">
-      <div class="mic-button-wrapper">
-        <button class="mic-btn" id="mic-btn" aria-label="Registra pasto">🎙️</button>
-        <div class="pulse-ring"></div>
-      </div>
-
-      <div class="text-input-wrapper">
-        <input type="text" id="manual-text-input" class="food-text-input" placeholder="Oppure scrivi (es. Spuntino: 30g noci)">
-        <button id="send-text-btn" class="send-text-btn">Invia</button>
-      </div>
-
-      <div class="status-msg" id="status-text">Detta o scrivi il pasto</div>
-    </div>
-
-    <div class="section-header" id="section-title">Pasti registrati</div>
-    <div class="logs-list" id="logs-container"></div>
+  <div class="date-selector">
+    <input type="date" id="datePicker">
   </div>
 
-  <script src="app.js"></script>
+  <section class="dashboard-card">
+    <div class="calorie-summary">
+      <div>
+        <span class="calorie-digits" id="totalCalories">0</span>
+        <span class="target-digits">/ <span id="targetTdee">2036</span> kcal TDEE</span>
+      </div>
+      <span class="target-digits">BMR: <span id="userBmrVal">1696</span> kcal</span>
+    </div>
+
+    <div class="progress-container">
+      <div class="progress-bar" id="calorieProgressBar"></div>
+      <div class="bmr-marker" id="bmrMarker" title="Soglia BMR"></div>
+    </div>
+
+    <div class="macro-grid">
+      <div class="macro-item">
+        <div class="macro-label">Proteine</div>
+        <div class="macro-val" id="totalProtein" style="color: #60a5fa;">0g</div>
+      </div>
+      <div class="macro-item">
+        <div class="macro-label">Carboidrati</div>
+        <div class="macro-val" id="totalCarbs" style="color: #facc15;">0g</div>
+      </div>
+      <div class="macro-item">
+        <div class="macro-label">Grassi</div>
+        <div class="macro-val" id="totalFat" style="color: #f87171;">0g</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="input-section">
+    <div class="input-box">
+      <input type="text" id="mealTextInput" placeholder="Es. 80g pasta con tonno...">
+      <button id="voiceBtn" title="Dettatura vocale">🎙️</button>
+      <button id="submitTextBtn" class="btn-submit" title="Invia">➔</button>
+    </div>
+    <div id="inputStatus"></div>
+  </section>
+
+  <div class="meals-container" id="mealsList"></div>
+
+  <script src="./app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(console.error);
+      });
+    }
+  </script>
 </body>
 </html>

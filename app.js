@@ -1,397 +1,315 @@
-const APP_VERSION = "v1.3.0";
-
-// Gestione Service Worker
-const versionTag = document.getElementById('app-version');
-if (versionTag) versionTag.innerText = APP_VERSION;
-
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').then((reg) => {
-    reg.onupdatefound = () => {
-      const worker = reg.installing;
-      worker.onstatechange = () => {
-        if (worker.state === 'installed' && navigator.serviceWorker.controller) {
-          if (versionTag) {
-            versionTag.innerText = `${APP_VERSION} (Nuovo aggiornamento! Tocca per ricaricare)`;
-            versionTag.classList.add('update-ready');
-            versionTag.onclick = () => window.location.reload();
-          }
-        }
-      };
-    };
-  }).catch(console.error);
-}
-
-// -------------------------------------------------------------
-// CHIAVE API
-// -------------------------------------------------------------
-const HARDCODED_API_KEY = "AQ.Ab8RN6IWCnhTPAC_2rSCT-8vJNXP6lR5AWmVFAHjsyb2mHPiLQ";
-const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get('key')) {
-  localStorage.setItem('gemini_api_key', urlParams.get('key').trim());
-  window.history.replaceState({}, document.title, window.location.pathname);
-}
-let apiKey = localStorage.getItem('gemini_api_key') || HARDCODED_API_KEY;
-
-// -------------------------------------------------------------
-// Profilo, BMR & TDEE (Mifflin-St Jeor)
-// -------------------------------------------------------------
-const defaultProfile = {
-  gender: 'male',
+// --- CONFIGURAZIONE PROFILO FISICO ---
+const USER_PROFILE = {
+  gender: "male",
   age: 20,
-  height: 173,
-  weight: 71,
-  activity: 1.2
+  heightCm: 173,
+  weightKg: 71,
+  activityMultiplier: 1.2
 };
 
-function getProfile() {
-  return JSON.parse(localStorage.getItem('user_nutrition_profile')) || defaultProfile;
+function calculateMetrics() {
+  // Mifflin-St Jeor: BMR = (10 * kg) + (6.25 * cm) - (5 * age) + 5 (uomo)
+  const bmr = Math.round((10 * USER_PROFILE.weightKg) + (6.25 * USER_PROFILE.heightCm) - (5 * USER_PROFILE.age) + 5);
+  const tdee = Math.round(bmr * USER_PROFILE.activityMultiplier);
+  return { bmr, tdee };
 }
 
-function calculateEnergyNeeds(profile) {
-  let bmr = (10 * profile.weight) + (6.25 * profile.height) - (5 * profile.age);
-  bmr += (profile.gender === 'male') ? 5 : -161;
-  const tdee = bmr * profile.activity;
-  return { bmr: Math.round(bmr), tdee: Math.round(tdee) };
+const { bmr: USER_BMR, tdee: USER_TDEE } = calculateMetrics();
+
+// --- GESTIONE API KEY E URL APPS SCRIPT ---
+function getApiKey() {
+  const params = new URLSearchParams(window.location.search);
+  const urlKey = params.get('key');
+  if (urlKey) return urlKey;
+  
+  const HARDCODED_API_KEY = "AQ.Ab8RN6LAjkXuYeNXQAAGCXWsv-SdC4s5oUwDu3_yw5uSCt2vBQ";
+  return HARDCODED_API_KEY;
 }
 
-function updateProfileUI() {
-  const profile = getProfile();
-  const { bmr, tdee } = calculateEnergyNeeds(profile);
+const SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbxnhbY1MlxA0G6HswEoievtKY-tfuZ7pgJIZCE0ER44HnYy9m_4yX1CevLwfdZbyCMp/exec";
 
-  document.getElementById('disp-bmr').innerText = bmr;
-  document.getElementById('disp-tdee').innerText = tdee;
+// --- GESTIONE STATO E DATE ---
+let currentDate = new Date().toISOString().split('T')[0];
 
-  document.getElementById('inp-weight').value = profile.weight;
-  document.getElementById('inp-height').value = profile.height;
-  document.getElementById('inp-age').value = profile.age;
-  document.getElementById('inp-gender').value = profile.gender;
-  document.getElementById('inp-activity').value = profile.activity;
+function getStoredMeals() {
+  const data = localStorage.getItem('calorie_tracker_meals');
+  return data ? JSON.parse(data) : [];
 }
 
-const toggleProfileBtn = document.getElementById('toggle-profile-btn');
-const profileEditPanel = document.getElementById('profile-edit-panel');
-toggleProfileBtn.addEventListener('click', () => {
-  profileEditPanel.classList.toggle('active');
-});
-
-document.getElementById('save-profile-btn').addEventListener('click', () => {
-  const updated = {
-    weight: parseFloat(document.getElementById('inp-weight').value) || defaultProfile.weight,
-    height: parseFloat(document.getElementById('inp-height').value) || defaultProfile.height,
-    age: parseInt(document.getElementById('inp-age').value) || defaultProfile.age,
-    gender: document.getElementById('inp-gender').value,
-    activity: parseFloat(document.getElementById('inp-activity').value)
-  };
-  localStorage.setItem('user_nutrition_profile', JSON.stringify(updated));
-  profileEditPanel.classList.remove('active');
-  updateProfileUI();
-  renderUI();
-});
-
-// -------------------------------------------------------------
-// Elementi DOM & Date
-// -------------------------------------------------------------
-const micBtn = document.getElementById('mic-btn');
-const statusText = document.getElementById('status-text');
-const logsContainer = document.getElementById('logs-container');
-const datePicker = document.getElementById('selected-date-picker');
-const prevDayBtn = document.getElementById('prev-day-btn');
-const nextDayBtn = document.getElementById('next-day-btn');
-const sectionTitle = document.getElementById('section-title');
-const manualTextInput = document.getElementById('manual-text-input');
-const sendTextBtn = document.getElementById('send-text-btn');
-
-let currentDate = new Date();
-
-function formatDate(d) {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+function saveMeals(meals) {
+  localStorage.setItem('calorie_tracker_meals', JSON.stringify(meals));
 }
 
-let currentDateString = formatDate(currentDate);
-datePicker.value = currentDateString;
-
-datePicker.addEventListener('change', (e) => {
-  if (!e.target.value) return;
-  currentDateString = e.target.value;
-  const [y, m, d] = currentDateString.split('-').map(Number);
-  currentDate = new Date(y, m - 1, d);
-  renderUI();
-});
-
-prevDayBtn.addEventListener('click', () => {
-  currentDate.setDate(currentDate.getDate() - 1);
-  currentDateString = formatDate(currentDate);
-  datePicker.value = currentDateString;
-  renderUI();
-});
-
-nextDayBtn.addEventListener('click', () => {
-  currentDate.setDate(currentDate.getDate() + 1);
-  currentDateString = formatDate(currentDate);
-  datePicker.value = currentDateString;
-  renderUI();
-});
-
-function getDefaultMealType() {
-  const hour = new Date().getHours();
-  const minutes = new Date().getMinutes();
-  const time = hour + minutes / 60;
-
-  if (time >= 5 && time < 11.5) return "Colazione";
-  if (time >= 11.5 && time < 15.5) return "Pranzo";
-  if (time >= 15.5 && time < 18.5) return "Spuntino";
-  if (time >= 18.5 && time < 23) return "Cena";
-  return "Spuntino";
+// --- SINCRONIZZAZIONE GOOGLE SHEETS ---
+async function syncFromGoogleSheets() {
+  if (!SHEETS_API_URL || SHEETS_API_URL.includes("INCOLLA_QUI")) return;
+  const statusEl = document.getElementById('syncStatus');
+  if (statusEl) statusEl.innerText = "Sincronizzazione...";
+  try {
+    const res = await fetch(SHEETS_API_URL);
+    const result = await res.json();
+    if (result.status === "success" && Array.isArray(result.data)) {
+      saveMeals(result.data);
+      renderDashboard();
+      if (statusEl) statusEl.innerText = "Sincronizzato";
+    }
+  } catch (err) {
+    console.warn("Sincronizzazione non riuscita:", err);
+    if (statusEl) statusEl.innerText = "Offline";
+  }
 }
 
-// -------------------------------------------------------------
-// Input Manuale & Vocale
-// -------------------------------------------------------------
-function handleManualSubmit() {
-  const text = manualTextInput.value.trim();
-  if (!text) return;
-  manualTextInput.value = '';
-  statusText.innerText = "Calcolo in corso...";
-  statusText.style.color = "#fb923c";
-  processFoodInput(text);
+async function syncToGoogleSheets(action, payload) {
+  if (!SHEETS_API_URL || SHEETS_API_URL.includes("INCOLLA_QUI")) return;
+  try {
+    await fetch(SHEETS_API_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: action, ...payload })
+    });
+  } catch (err) {
+    console.warn("Invio dati a Google Sheets non riuscito:", err);
+  }
 }
 
-sendTextBtn.addEventListener('click', handleManualSubmit);
-manualTextInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') handleManualSubmit();
-});
-
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognition = null;
-
-if (SpeechRecognition) {
-  recognition = new SpeechRecognition();
-  recognition.lang = 'it-IT';
-  recognition.interimResults = false;
-  recognition.maxAlternatives = 1;
-
-  recognition.onstart = () => {
-    micBtn.classList.add('listening');
-    statusText.innerText = "In ascolto...";
-    statusText.style.color = "#38bdf8";
-  };
-
-  recognition.onresult = async (event) => {
-    const transcript = event.results[0][0].transcript;
-    statusText.innerText = "Calcolo in corso...";
-    statusText.style.color = "#fb923c";
-    await processFoodInput(transcript);
-  };
-
-  recognition.onerror = (event) => {
-    statusText.innerText = "Errore: " + event.error;
-    statusText.style.color = "#ef4444";
-    micBtn.classList.remove('listening');
-  };
-
-  recognition.onend = () => {
-    micBtn.classList.remove('listening');
-  };
-} else {
-  statusText.innerText = "Microfono non supportato.";
-  micBtn.disabled = true;
+// --- LOGICA SPUNTINI PROGRESSIVI ---
+function getNextSnackName(date) {
+  const meals = getStoredMeals().filter(m => m.date === date);
+  const snackCount = meals.filter(m => m.type && m.type.startsWith("Spuntino")).length;
+  return `Spuntino ${snackCount + 1}`;
 }
 
-function startListening() {
-  if (!apiKey || apiKey === "INCOLLA_QUI_LA_TUA_CHIAVE_API") {
-    alert("Inserisci la tua chiave API di Gemini!");
+// --- RENDERING DELLA DASHBOARD ---
+function renderDashboard() {
+  const allMeals = getStoredMeals();
+  const dayMeals = allMeals.filter(m => m.date === currentDate);
+  
+  let totalCal = 0, totalP = 0, totalC = 0, totalF = 0;
+  dayMeals.forEach(m => {
+    totalCal += m.calories || 0;
+    totalP += m.protein || 0;
+    totalC += m.carbs || 0;
+    totalF += m.fat || 0;
+  });
+
+  // Aggiorna metriche numeriche
+  document.getElementById('totalCalories').innerText = totalCal;
+  document.getElementById('totalProtein').innerText = totalP + "g";
+  document.getElementById('totalCarbs').innerText = totalC + "g";
+  document.getElementById('totalFat').innerText = totalF + "g";
+  
+  document.getElementById('targetTdee').innerText = USER_TDEE;
+  document.getElementById('userBmrVal').innerText = USER_BMR;
+
+  // Calcolo percentuali sul TDEE
+  const pctTdee = Math.min(Math.round((totalCal / USER_TDEE) * 100), 100);
+  const pctBmr = Math.min(Math.round((USER_BMR / USER_TDEE) * 100), 100);
+
+  const progressBar = document.getElementById('calorieProgressBar');
+  if (progressBar) {
+    progressBar.style.width = pctTdee + "%";
+    if (totalCal > USER_TDEE) {
+      progressBar.style.backgroundColor = "var(--danger)";
+    } else {
+      progressBar.style.backgroundColor = "var(--accent)";
+    }
+  }
+
+  const bmrMarker = document.getElementById('bmrMarker');
+  if (bmrMarker) {
+    bmrMarker.style.left = pctBmr + "%";
+  }
+
+  // Lista dei pasti del giorno
+  const listContainer = document.getElementById('mealsList');
+  listContainer.innerHTML = '';
+  
+  if (dayMeals.length === 0) {
+    listContainer.innerHTML = '<div style="text-align:center; color: var(--text-muted); padding: 2rem;">Nessun pasto registrato per questa data.</div>';
     return;
   }
-  if (recognition) {
-    try { recognition.start(); } catch (e) {}
-  }
+
+  dayMeals.forEach(meal => {
+    const mealCard = document.createElement('div');
+    mealCard.className = 'meal-card';
+    
+    const mealPct = ((meal.calories / USER_TDEE) * 100).toFixed(1);
+
+    mealCard.innerHTML = `
+      <div class="meal-info">
+        <span class="meal-type">${meal.type || 'Pasto'} • ${mealPct}% TDEE</span>
+        <span class="meal-name">${meal.name}</span>
+        <span class="meal-macros">P: ${meal.protein}g | C: ${meal.carbs}g | G: ${meal.fat}g</span>
+      </div>
+      <div style="display:flex; align-items:center; gap: 12px;">
+        <span class="meal-calories">${meal.calories} kcal</span>
+        <button class="delete-btn" onclick="deleteMeal('${meal.id}')" title="Elimina pasto">✕</button>
+      </div>
+    `;
+    listContainer.appendChild(mealCard);
+  });
 }
 
-micBtn.addEventListener('click', startListening);
+function deleteMeal(id) {
+  let meals = getStoredMeals();
+  meals = meals.filter(m => m.id !== id);
+  saveMeals(meals);
+  renderDashboard();
+  syncToGoogleSheets("syncAll", { meals: meals });
+}
 
-// -------------------------------------------------------------
-// Chiamata Gemini 3.6 Flash
-// -------------------------------------------------------------
-async function processFoodInput(text) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
-  const defaultMeal = getDefaultMealType();
+// --- ANALISI CON GEMINI 3.6 FLASH ---
+async function analyzeMealWithGemini(inputText) {
+  const apiKey = getApiKey();
+  if (!apiKey || apiKey.includes("INCOLLA_QUI")) {
+    throw new Error("Chiave API mancante. Inseriscila in app.js o come ?key= nell'URL.");
+  }
 
-  const prompt = `Sei un nutrizionista. Analizza questa descrizione di un pasto ed estrai calorie, macronutrienti e il tipo di pasto: "${text}".
-Regole sul campo "tipo_pasto":
-- Se l'utente specifica chiaramente il pasto (es. colazione, pranzo, cena, merenda, spuntino), assegna la categoria opportuna ("Colazione", "Pranzo", "Spuntino", "Cena").
-- Se l'utente NON specifica il pasto, assegna il valore predefinito calcolato sull'orario attuale: "${defaultMeal}".
+  const nextSnackLabel = getNextSnackName(currentDate);
 
-Rispondi RIGOROSAMENTE con un oggetto JSON valido in questo formato esatto:
+  const systemInstruction = `Sei un nutrizionista esperto. Analizza la descrizione del pasto fornita in italiano e restituisci ESCLUSIVAMENTE un JSON strutturato con le stime nutrizionali.
+Se il pasto descritto è un generico snack/merenda/spuntino, imposta "mealType" con il valore "${nextSnackLabel}".
+Se è Colazione, Pranzo o Cena, usa rispettivamente "Colazione", "Pranzo", "Cena".
+Devi restituire un oggetto JSON con questo schema:
 {
-  "tipo_pasto": "Colazione" | "Pranzo" | "Spuntino" | "Cena",
-  "descrizione": "breve sintesi del cibo (max 4-5 parole)",
-  "kcal": numero_intero,
-  "proteine": numero_con_virgola,
-  "carboidrati": numero_con_virgola,
-  "grassi": numero_con_virgola
+  "mealType": "string",
+  "mealDescription": "string",
+  "calories": number,
+  "protein": number,
+  "carbs": number,
+  "fat": number
 }`;
 
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+
+  const payload = {
+    contents: [{
+      role: "user",
+      parts: [{ text: inputText }]
+    }],
+    systemInstruction: {
+      parts: [{ text: systemInstruction }]
+    },
+    generationConfig: {
+      responseMimeType: "application/json"
+    }
+  };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errData = await response.json();
+    throw new Error(errData.error?.message || `Errore HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  return JSON.parse(textResponse);
+}
+
+// --- GESTIONE AGGIUNTA PASTO ---
+async function handleMealSubmission(text) {
+  if (!text || text.trim() === '') return;
+  const statusEl = document.getElementById('inputStatus');
+  statusEl.innerText = "Analisi nutrizionale in corso con Gemini...";
+  statusEl.style.color = "var(--accent)";
+
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { response_mime_type: "application/json" }
-      })
-    });
+    const result = await analyzeMealWithGemini(text);
+    
+    const newMeal = {
+      id: "meal_" + Date.now(),
+      date: currentDate,
+      type: result.mealType || "Pasto",
+      name: result.mealDescription || text,
+      calories: Math.round(result.calories) || 0,
+      protein: Math.round(result.protein) || 0,
+      carbs: Math.round(result.carbs) || 0,
+      fat: Math.round(result.fat) || 0
+    };
 
-    const data = await res.json();
-    if (data.error) throw new Error(data.error.message);
+    const meals = getStoredMeals();
+    meals.push(newMeal);
+    saveMeals(meals);
+    renderDashboard();
+    syncToGoogleSheets("add", { meal: newMeal });
 
-    const jsonStr = data.candidates[0].content.parts[0].text;
-    const foodData = JSON.parse(jsonStr);
-
-    saveEntry(foodData, currentDateString);
-    statusText.innerText = `Aggiunto: ${foodData.descrizione}`;
-    statusText.style.color = "#34d399";
+    statusEl.innerText = "Pasto aggiunto con successo!";
+    statusEl.style.color = "var(--accent)";
+    document.getElementById('mealTextInput').value = '';
+    setTimeout(() => { statusEl.innerText = ""; }, 3000);
   } catch (err) {
     console.error(err);
-    statusText.innerText = "Errore: " + err.message;
-    statusText.style.color = "#ef4444";
+    statusEl.innerText = "Errore: " + err.message;
+    statusEl.style.color = "var(--danger)";
   }
 }
 
-// -------------------------------------------------------------
-// Storage & Assegnazione Progressiva Spuntini
-// -------------------------------------------------------------
-function getStoredLogs() {
-  return JSON.parse(localStorage.getItem('cal_tracker_logs') || '[]');
-}
+// --- INIZIALIZZAZIONE ---
+document.addEventListener('DOMContentLoaded', () => {
+  const datePicker = document.getElementById('datePicker');
+  if (datePicker) {
+    datePicker.value = currentDate;
+    datePicker.addEventListener('change', (e) => {
+      currentDate = e.target.value;
+      renderDashboard();
+    });
+  }
 
-function saveEntry(entry, dateTarget) {
-  const logs = getStoredLogs();
-  const now = new Date();
-  const timeFormatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-  logs.push({
-    id: Date.now(),
-    date: dateTarget,
-    time: timeFormatted,
-    tipo_pasto: entry.tipo_pasto || getDefaultMealType(),
-    descrizione: entry.descrizione,
-    kcal: entry.kcal,
-    proteine: entry.proteine,
-    carboidrati: entry.carboidrati,
-    grassi: entry.grassi
+  document.getElementById('submitTextBtn').addEventListener('click', () => {
+    const text = document.getElementById('mealTextInput').value;
+    handleMealSubmission(text);
   });
 
-  localStorage.setItem('cal_tracker_logs', JSON.stringify(logs));
-  renderUI();
-}
-
-window.deleteEntry = function(id) {
-  const logs = getStoredLogs().filter(item => item.id !== id);
-  localStorage.setItem('cal_tracker_logs', JSON.stringify(logs));
-  renderUI();
-};
-
-function getMealClass(tipo) {
-  const t = (tipo || '').toLowerCase();
-  if (t.includes('colazione')) return 'meal-colazione';
-  if (t.includes('pranzo')) return 'meal-pranzo';
-  if (t.includes('cena')) return 'meal-cena';
-  return 'meal-spuntino';
-}
-
-// -------------------------------------------------------------
-// Render Interfaccia
-// -------------------------------------------------------------
-function renderUI() {
-  const profile = getProfile();
-  const { tdee } = calculateEnergyNeeds(profile);
-
-  const logs = getStoredLogs();
-  const dayLogs = logs.filter(item => item.date === currentDateString);
-  const todayStr = formatDate(new Date());
-
-  sectionTitle.innerText = (currentDateString === todayStr) ? "Pasti di oggi" : `Pasti del ${currentDateString}`;
-
-  let spuntinoCount = 0;
-  const processedDayLogs = dayLogs.map(item => {
-    let displayName = item.tipo_pasto;
-    if ((item.tipo_pasto || '').toLowerCase().includes('spuntino')) {
-      spuntinoCount++;
-      displayName = `Spuntino ${spuntinoCount}`;
+  document.getElementById('mealTextInput').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      const text = document.getElementById('mealTextInput').value;
+      handleMealSubmission(text);
     }
-    return { ...item, displayMeal: displayName };
   });
 
-  let totKcal = 0, totProt = 0, totCarb = 0, totFat = 0;
-  logsContainer.innerHTML = '';
+  // Supporto Riconoscimento Vocale
+  const voiceBtn = document.getElementById('voiceBtn');
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-  [...processedDayLogs].reverse().forEach(item => {
-    totKcal += Number(item.kcal) || 0;
-    totProt += Number(item.proteine) || 0;
-    totCarb += Number(item.carboidrati) || 0;
-    totFat += Number(item.grassi) || 0;
+  if (SpeechRecognition) {
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'it-IT';
+    recognition.continuous = false;
+    recognition.interimResults = false;
 
-    const mealClass = getMealClass(item.tipo_pasto);
-    const mealPercentage = tdee > 0 ? ((item.kcal / tdee) * 100).toFixed(1) : 0;
+    voiceBtn.addEventListener('click', () => {
+      recognition.start();
+      voiceBtn.classList.add('recording');
+      document.getElementById('inputStatus').innerText = "In ascolto... Parla ora.";
+      document.getElementById('inputStatus').style.color = "var(--accent)";
+    });
 
-    const row = document.createElement('div');
-    row.className = 'log-card';
-    row.innerHTML = `
-      <div style="flex: 1;">
-        <div class="log-header-line">
-          <span class="meal-type-tag ${mealClass}">${item.displayMeal}</span>
-          <span class="meal-time-tag">🕒 ${item.time || item.timestamp || '--:--'}</span>
-          <span class="tdee-badge">${mealPercentage}% TDEE</span>
-        </div>
-        <div class="log-title">${item.descrizione}</div>
-        <div class="log-meta"><b>${item.kcal} kcal</b> • P: ${item.proteine}g | C: ${item.carboidrati}g | G: ${item.grassi}g</div>
-      </div>
-      <button class="btn-delete" onclick="deleteEntry(${item.id})">✕</button>
-    `;
-    logsContainer.appendChild(row);
-  });
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      document.getElementById('mealTextInput').value = transcript;
+      handleMealSubmission(transcript);
+    };
 
-  if (processedDayLogs.length === 0) {
-    logsContainer.innerHTML = '<div style="color: var(--text-muted); text-align: center; font-size: 0.85rem; padding: 18px;">Nessun pasto registrato.</div>';
-  }
+    recognition.onspeechend = () => {
+      recognition.stop();
+      voiceBtn.classList.remove('recording');
+    };
 
-  document.getElementById('tot-kcal').innerText = Math.round(totKcal);
-  document.getElementById('tot-prot').innerText = `${Math.round(totProt)}g`;
-  document.getElementById('tot-carb').innerText = `${Math.round(totCarb)}g`;
-  document.getElementById('tot-fat').innerText = `${Math.round(totFat)}g`;
-
-  const progressPercent = tdee > 0 ? Math.min((totKcal / tdee) * 100, 100) : 0;
-  const progressBar = document.getElementById('tdee-progress-bar');
-  progressBar.style.width = `${progressPercent}%`;
-
-  if (totKcal > tdee) {
-    progressBar.classList.add('over');
+    recognition.onerror = (event) => {
+      voiceBtn.classList.remove('recording');
+      document.getElementById('inputStatus').innerText = "Errore microfono: " + event.error;
+      document.getElementById('inputStatus').style.color = "var(--danger)";
+    };
   } else {
-    progressBar.classList.remove('over');
+    voiceBtn.style.display = 'none';
   }
 
-  const consumedPercent = tdee > 0 ? ((totKcal / tdee) * 100).toFixed(1) : 0;
-  document.getElementById('tdee-consumed-lbl').innerText = `${consumedPercent}% del TDEE (${Math.round(totKcal)}/${tdee} kcal)`;
-
-  const remainingKcal = tdee - totKcal;
-  if (remainingKcal >= 0) {
-    document.getElementById('tdee-remaining-lbl').innerText = `${Math.round(remainingKcal)} kcal rimanenti`;
-    document.getElementById('tdee-remaining-lbl').style.color = "var(--text-muted)";
-  } else {
-    document.getElementById('tdee-remaining-lbl').innerText = `+${Math.abs(Math.round(remainingKcal))} kcal oltre il TDEE`;
-    document.getElementById('tdee-remaining-lbl').style.color = "#ef4444";
-  }
-}
-
-updateProfileUI();
-renderUI();
-
-window.addEventListener('DOMContentLoaded', () => {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('auto') === 'true') {
-    setTimeout(startListening, 600);
-  }
+  renderDashboard();
+  syncFromGoogleSheets();
 });
