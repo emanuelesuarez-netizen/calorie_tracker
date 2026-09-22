@@ -21,10 +21,23 @@
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background-color: var(--bg); color: var(--text); padding: 1.25rem; max-width: 600px; margin: 0 auto; min-height: 100vh; }
     
-    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
     h1 { font-size: 1.25rem; font-weight: 700; color: var(--text); }
     .badge { background: #334155; color: #38bdf8; font-size: 0.75rem; padding: 2px 8px; border-radius: 9999px; }
     #syncStatus { font-size: 0.75rem; color: var(--text-muted); }
+
+    .user-bar {
+      display: flex; gap: 8px; align-items: center; margin-bottom: 1.25rem;
+      background: var(--card-bg); padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border);
+    }
+    .user-bar select {
+      flex: 1; background: #0f172a; border: 1px solid var(--border); color: var(--text);
+      padding: 0.4rem 0.6rem; border-radius: 6px; outline: none; font-size: 0.9rem;
+    }
+    .user-bar button {
+      background: #334155; border: 1px solid var(--border); color: var(--text);
+      padding: 0.4rem 0.7rem; border-radius: 6px; cursor: pointer; font-size: 0.85rem;
+    }
 
     .date-selector { margin-bottom: 1.25rem; }
     .date-selector input[type="date"] {
@@ -73,16 +86,35 @@
     .meal-calories { font-size: 1rem; font-weight: 700; }
     .delete-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1rem; }
     .delete-btn:hover { color: var(--danger); }
+
+    /* Modal Impostazioni Utente */
+    .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; }
+    .modal-content { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; width: 90%; max-width: 440px; padding: 1.5rem; }
+    .modal-content h2 { font-size: 1.1rem; margin-bottom: 1rem; }
+    .form-group { margin-bottom: 0.8rem; display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 0.8rem; color: var(--text-muted); }
+    .form-group input, .form-group select {
+      background: #0f172a; border: 1px solid var(--border); color: var(--text); padding: 0.5rem; border-radius: 6px; outline: none; font-size: 0.9rem;
+    }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 1.2rem; }
+    .modal-actions button { padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; border: none; }
   </style>
 </head>
 <body>
   <header>
     <div>
       <h1>Calorie Tracker</h1>
-      <span class="badge">v1.4.0</span>
+      <span class="badge">v1.5.1</span>
     </div>
     <span id="syncStatus">Cloud attivo</span>
   </header>
+
+  <div class="user-bar">
+    <span style="font-size: 0.85rem; color: var(--text-muted);">Utente:</span>
+    <select id="userSelect"></select>
+    <button id="editUserBtn" title="Modifica profilo">⚙️ Profilo</button>
+    <button id="addUserBtn" title="Aggiungi utente">➕</button>
+  </div>
 
   <div class="date-selector">
     <input type="date" id="datePicker">
@@ -92,9 +124,9 @@
     <div class="calorie-summary">
       <div>
         <span class="calorie-digits" id="totalCalories">0</span>
-        <span class="target-digits">/ <span id="targetTdee">2036</span> kcal TDEE</span>
+        <span class="target-digits">/ <span id="targetTdee">0</span> kcal TDEE</span>
       </div>
-      <span class="target-digits">BMR: <span id="userBmrVal">1696</span> kcal</span>
+      <span class="target-digits">BMR: <span id="userBmrVal">0</span> kcal</span>
     </div>
 
     <div class="progress-container">
@@ -128,6 +160,49 @@
   </section>
 
   <div class="meals-container" id="mealsList"></div>
+
+  <!-- Modal Impostazioni Utente -->
+  <div id="userModal" class="modal">
+    <div class="modal-content">
+      <h2 id="modalTitle">Profilo Utente</h2>
+      <div class="form-group" id="userNameGroup">
+        <label>Nome Utente</label>
+        <input type="text" id="profName" placeholder="Nome">
+      </div>
+      <div class="form-group">
+        <label>Genere</label>
+        <select id="profGender">
+          <option value="male">Uomo</option>
+          <option value="female">Donna</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Età (anni)</label>
+        <input type="number" id="profAge" value="20">
+      </div>
+      <div class="form-group">
+        <label>Altezza (cm)</label>
+        <input type="number" id="profHeight" value="173">
+      </div>
+      <div class="form-group">
+        <label>Peso (kg)</label>
+        <input type="number" id="profWeight" value="71" step="0.1">
+      </div>
+      <div class="form-group">
+        <label>Stile di Vita e Attività Fisica</label>
+        <select id="profActivityLevel">
+          <option value="sedentary">Sedentario (Studio/Ufficio, nessun allenamento)</option>
+          <option value="light">Leggero (Camminate o 1-3 allenamenti a settimana)</option>
+          <option value="moderate">Moderato (Lavoro in movimento o 3-5 allenamenti)</option>
+          <option value="active">Molto attivo (Lavoro fisico o 6-7 allenamenti intensi)</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button id="cancelModalBtn" style="background:#334155; color:var(--text);">Annulla</button>
+        <button id="saveProfileBtn" style="background:var(--accent); color:#0f172a; font-weight:bold;">Salva</button>
+      </div>
+    </div>
+  </div>
 
   <script src="./app.js"></script>
   <script>
