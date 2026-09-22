@@ -9,14 +9,14 @@ function getApiKey() {
 
 // --- MAPPA LIVELLI ATTIVITÀ FISICA E STIMA AUTOMATICA MOLTIPLICATORE ---
 const ACTIVITY_MULTIPLIERS = {
-  sedentary: 1.2,    // Sedentario: studio, PC, lavoro alla scrivania
-  light: 1.375,      // Leggero: camminate regolari, 1-3 sessioni sportive settimanali
-  moderate: 1.55,    // Moderato: lavoro dinamico / rider / 3-5 sessioni sportive
-  active: 1.725      // Molto attivo: lavori fisici pesanti o atleti 6-7 giorni
+  sedentary: 1.2,
+  light: 1.375,
+  moderate: 1.55,
+  active: 1.725
 };
 
-// --- GESTIONE PROFILI MULTIUTENTE ---
-const DEFAULT_PROFILES = {
+// --- GESTIONE PROFILI ---
+const FALLBACK_PROFILES = {
   "Emanuele": {
     gender: "male",
     age: 20,
@@ -27,27 +27,22 @@ const DEFAULT_PROFILES = {
 };
 
 function getProfiles() {
-  const stored = localStorage.getItem('cal_profiles');
-  return stored ? JSON.parse(stored) : DEFAULT_PROFILES;
+  const stored = localStorage.getItem('cal_profiles_cloud');
+  return stored ? JSON.parse(stored) : FALLBACK_PROFILES;
 }
 
-function saveProfiles(profiles) {
-  localStorage.setItem('cal_profiles', JSON.stringify(profiles));
+function saveProfilesLocally(profiles) {
+  localStorage.setItem('cal_profiles_cloud', JSON.stringify(profiles));
 }
 
 let activeUser = localStorage.getItem('cal_active_user') || "Emanuele";
 
 function calculateMetricsFor(profile) {
   if (!profile) return { bmr: 1700, tdee: 2040 };
-  
-  // Formula di Mifflin-St Jeor
   let bmr = (10 * profile.weightKg) + (6.25 * profile.heightCm) - (5 * profile.age);
   bmr = (profile.gender === "male") ? bmr + 5 : bmr - 161;
-
-  // Stima automatica del moltiplicatore dal livello scelto
   const multiplier = ACTIVITY_MULTIPLIERS[profile.activityLevel] || 1.2;
   const tdee = Math.round(bmr * multiplier);
-  
   return { bmr: Math.round(bmr), tdee };
 }
 
@@ -55,7 +50,7 @@ function calculateMetricsFor(profile) {
 let currentDate = new Date().toISOString().split('T')[0];
 
 function getStoredMealsKey() {
-  return `calorie_tracker_meals_${activeUser.toLowerCase()}`;
+  return `calorie_tracker_meals_${activeUser.trim().toLowerCase()}`;
 }
 
 function getStoredMeals() {
@@ -67,14 +62,53 @@ function saveMeals(meals) {
   localStorage.setItem(getStoredMealsKey(), JSON.stringify(meals));
 }
 
-// --- SINCRONIZZAZIONE GOOGLE SHEETS ISOLATA PER UTENTE ---
+// --- SINCRONIZZAZIONE PROFILI (CLOUD) ---
+async function syncProfilesFromCloud() {
+  if (!SHEETS_API_URL) return;
+  try {
+    const res = await fetch(`${SHEETS_API_URL}?type=profiles&t=${Date.now()}`, {
+      method: "GET",
+      redirect: "follow"
+    });
+    if (!res.ok) return;
+    const result = await res.json();
+    if (result.status === "success" && result.data && Object.keys(result.data).length > 0) {
+      saveProfilesLocally(result.data);
+      
+      const userList = Object.keys(result.data);
+      if (!userList.includes(activeUser)) {
+        activeUser = userList[0];
+        localStorage.setItem('cal_active_user', activeUser);
+      }
+      populateUserSelect();
+    }
+  } catch (err) {
+    console.warn("Impossibile caricare i profili dal cloud:", err);
+  }
+}
+
+async function saveProfilesToCloud(profiles) {
+  if (!SHEETS_API_URL) return;
+  try {
+    await fetch(SHEETS_API_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target: "profiles", profiles: profiles })
+    });
+  } catch (err) {
+    console.warn("Invio profili al cloud fallito:", err);
+  }
+}
+
+// --- SINCRONIZZAZIONE PASTI (CLOUD) ---
 async function syncFromGoogleSheets() {
   if (!SHEETS_API_URL) return;
   const statusEl = document.getElementById('syncStatus');
-  if (statusEl) statusEl.innerText = "Sincronizzazione...";
-  
+  if (statusEl) statusEl.innerText = `Sincronizzazione (${activeUser})...`;
+
   try {
-    const fetchUrl = `${SHEETS_API_URL}?user=${encodeURIComponent(activeUser)}&t=${Date.now()}`;
+    const fetchUrl = `${SHEETS_API_URL}?type=meals&user=${encodeURIComponent(activeUser)}&t=${Date.now()}`;
     const res = await fetch(fetchUrl, {
       method: "GET",
       redirect: "follow"
@@ -86,10 +120,10 @@ async function syncFromGoogleSheets() {
     if (result.status === "success" && Array.isArray(result.data)) {
       saveMeals(result.data);
       renderDashboard();
-      if (statusEl) statusEl.innerText = `Sincronizzato (${activeUser})`;
+      if (statusEl) statusEl.innerText = `Sincronizzato: ${activeUser}`;
     }
   } catch (err) {
-    console.warn("Sincronizzazione fallita:", err);
+    console.warn("Sincronizzazione pasti non riuscita:", err);
     if (statusEl) statusEl.innerText = "Offline";
   }
 }
@@ -101,10 +135,10 @@ async function syncToGoogleSheets(action, payload) {
       method: "POST",
       mode: "no-cors",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: action, user: activeUser, ...payload })
+      body: JSON.stringify({ target: "meals", action: action, user: activeUser, ...payload })
     });
   } catch (err) {
-    console.warn("Invio a Google Sheets non riuscito:", err);
+    console.warn("Invio dati pasti a Google Sheets fallito:", err);
   }
 }
 
@@ -118,12 +152,12 @@ function getNextSnackName(date) {
 // --- RENDERING DASHBOARD ---
 function renderDashboard() {
   const profiles = getProfiles();
-  const profile = profiles[activeUser] || profiles["Emanuele"] || { gender: "male", age: 20, heightCm: 173, weightKg: 71, activityLevel: "sedentary" };
+  const profile = profiles[activeUser] || FALLBACK_PROFILES["Emanuele"];
   const { bmr, tdee } = calculateMetricsFor(profile);
 
   const allMeals = getStoredMeals();
   const dayMeals = allMeals.filter(m => m.date === currentDate);
-  
+
   let totalCal = 0, totalP = 0, totalC = 0, totalF = 0;
   dayMeals.forEach(m => {
     totalCal += m.calories || 0;
@@ -136,7 +170,7 @@ function renderDashboard() {
   document.getElementById('totalProtein').innerText = totalP + "g";
   document.getElementById('totalCarbs').innerText = totalC + "g";
   document.getElementById('totalFat').innerText = totalF + "g";
-  
+
   document.getElementById('targetTdee').innerText = tdee;
   document.getElementById('userBmrVal').innerText = bmr;
 
@@ -156,7 +190,7 @@ function renderDashboard() {
 
   const listContainer = document.getElementById('mealsList');
   listContainer.innerHTML = '';
-  
+
   if (dayMeals.length === 0) {
     listContainer.innerHTML = '<div style="text-align:center; color: var(--text-muted); padding: 2rem;">Nessun pasto registrato per questa data.</div>';
     return;
@@ -233,12 +267,12 @@ Schema JSON richiesto:
 async function handleMealSubmission(text) {
   if (!text || text.trim() === '') return;
   const statusEl = document.getElementById('inputStatus');
-  statusEl.innerText = "Analisi nutrizionale in corso con Gemini...";
+  statusEl.innerText = `Analisi per ${activeUser}...`;
   statusEl.style.color = "var(--accent)";
 
   try {
     const result = await analyzeMealWithGemini(text);
-    
+
     const newMeal = {
       id: "meal_" + Date.now(),
       date: currentDate,
@@ -272,12 +306,12 @@ function populateUserSelect() {
   const userSelect = document.getElementById('userSelect');
   const profiles = getProfiles();
   userSelect.innerHTML = '';
-  
+
   Object.keys(profiles).forEach(user => {
     const opt = document.createElement('option');
     opt.value = user;
     opt.textContent = user;
-    if (user === activeUser) opt.selected = true;
+    if (user.toLowerCase() === activeUser.toLowerCase()) opt.selected = true;
     userSelect.appendChild(opt);
   });
 }
@@ -289,7 +323,7 @@ function openProfileModal(isNew = false) {
   const modalTitle = document.getElementById('modalTitle');
 
   if (isNew) {
-    modalTitle.innerText = "Nuovo Utente";
+    modalTitle.innerText = "Nuovo Profilo Utente";
     nameGroup.style.display = "flex";
     document.getElementById('profName').value = "";
     document.getElementById('profAge').value = "25";
@@ -311,7 +345,7 @@ function openProfileModal(isNew = false) {
 }
 
 // --- INIZIALIZZAZIONE ---
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   populateUserSelect();
 
   const userSelect = document.getElementById('userSelect');
@@ -349,7 +383,8 @@ document.addEventListener('DOMContentLoaded', () => {
       activityLevel: document.getElementById('profActivityLevel').value
     };
 
-    saveProfiles(profiles);
+    saveProfilesLocally(profiles);
+    saveProfilesToCloud(profiles);
     populateUserSelect();
     document.getElementById('userModal').style.display = 'none';
     renderDashboard();
@@ -377,7 +412,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Supporto Vocale
+  // Supporto Vocale con auto-start se ?voice=1
   const voiceBtn = document.getElementById('voiceBtn');
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -428,6 +463,7 @@ document.addEventListener('DOMContentLoaded', () => {
     voiceBtn.style.display = 'none';
   }
 
+  await syncProfilesFromCloud();
   renderDashboard();
   syncFromGoogleSheets();
 });
